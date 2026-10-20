@@ -1,4 +1,4 @@
-﻿name: CI/CD Pipeline
+﻿name: CI/CD
 
 on:
   push:
@@ -12,83 +12,64 @@ permissions:
   packages: write
 
 jobs:
-  # -----------------------------------------------------------
-  # 1. CI (Integración Continua): Pruebas y calidad de código
-  # -----------------------------------------------------------
-  ci:
-    name: Lint & Unit Tests
+  test:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Descargar código (Checkout)
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Configurar Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: "pip"
 
-      - name: Instalar dependencias
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt flake8
 
-      - name: Linting y sintaxis con Flake8
+      - name: Lint
         run: |
-          # Falla si hay errores de sintaxis o variables indefinidas
           flake8 app.py test_app.py --count --select=E9,F63,F7,F82 --show-source --statistics
 
-      - name: Ejecutar pruebas unitarias con Pytest
+      - name: Run tests
         run: |
           pytest test_app.py -v
 
-  # -----------------------------------------------------------
-  # 2. Docker: Construcción y prueba del contenedor
-  # -----------------------------------------------------------
   docker-test:
-    name: Build & Smoke Test Docker
     runs-on: ubuntu-latest
-    needs: ci
-
+    needs: test
     steps:
-      - name: Descargar código
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Configurar Docker Buildx
-        uses: actions/setup-buildx-action@v3
-
-      - name: Construir imagen Docker
+      - name: Build image
         run: |
           docker build -t mi-app-docker:test .
 
-      - name: Probar ejecución del contenedor
+      - name: Test container
         run: |
-          docker run -d -p 5000:5000 --name app-smoke-test mi-app-docker:test
+          docker run -d -p 5000:5000 --name test-app mi-app-docker:test
           sleep 4
-          curl --fail http://localhost:5000/ || (docker logs app-smoke-test && exit 1)
+          curl --fail http://localhost:5000/
 
-  # -----------------------------------------------------------
-  # 3. CD (Despliegue / Entrega Continua): Publicación de imagen
-  # -----------------------------------------------------------
   cd:
-    name: Publish Docker Image to GHCR
     runs-on: ubuntu-latest
-    needs: [ci, docker-test]
+    needs: [test, docker-test]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-
     steps:
-      - name: Descargar código
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Iniciar sesión en GitHub Container Registry
+      - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extraer metadatos para Docker (tags y etiquetas)
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Docker metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
@@ -97,7 +78,7 @@ jobs:
             type=raw,value=latest
             type=sha,format=short
 
-      - name: Construir y publicar imagen Docker en GHCR
+      - name: Build and push
         uses: docker/build-push-action@v5
         with:
           context: .
