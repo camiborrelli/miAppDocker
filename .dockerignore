@@ -1,4 +1,11 @@
-__pycache__
+﻿__pycache__
 *.pyc
+*.pyo
+*.pyd
 .git
 .gitignore
+.github
+test_app.py
+*.md
+.venv
+venv/
